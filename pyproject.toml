@@ -1,0 +1,71 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hf-inference-platform"
+version = "0.1.0"
+description = "Inference platform scaffold for Hugging Face Diffusers, Transformers, and PyTorch workloads."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "Kevin" }
+]
+dependencies = [
+  "fastapi>=0.116.1",
+  "huggingface-hub>=0.34.4",
+  "httpx>=0.28.1",
+  "orjson>=3.10.18",
+  "pillow>=11.3.0",
+  "pydantic>=2.11.7",
+  "pydantic-settings>=2.10.1",
+  "python-dotenv>=1.1.1",
+  "safetensors>=0.6.2",
+  "uvicorn>=0.35.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.17.1",
+  "pytest>=8.4.1",
+  "pytest-asyncio>=1.1.0",
+  "ruff>=0.12.8"
+]
+inference = [
+  "accelerate>=1.8.1",
+  "diffusers>=0.35.1",
+  "torch>=2.8.0",
+  "transformers>=4.57.1"
+]
+llm = [
+  "vllm>=0.10.0"
+]
+flash = [
+  "flash-attn>=2.8.0.post2"
+]
+
+[project.scripts]
+hf-inference-api = "hf_inference_platform.main:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hf_inference_platform", "src/hf_inference_sdk"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["hf_inference_platform", "hf_inference_sdk"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+strict_optional = true
+ignore_missing_imports = true
