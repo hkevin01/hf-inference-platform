@@ -1,0 +1,24 @@
+{
+  "cases": [
+    {
+      "url": "http://127.0.0.1:8000/v1/generate/text",
+      "runs": 5,
+      "payload": {
+        "model_id": "distilgpt2",
+        "prompt": "Summarize why latency percentiles matter for model serving.",
+        "max_new_tokens": 64
+      }
+    },
+    {
+      "url": "http://127.0.0.1:8000/v1/generate/image",
+      "runs": 3,
+      "payload": {
+        "model_id": "runwayml/stable-diffusion-v1-5",
+        "prompt": "studio product photography, matte ceramic vase, warm side lighting",
+        "num_inference_steps": 20,
+        "height": 512,
+        "width": 512
+      }
+    }
+  ]
+}

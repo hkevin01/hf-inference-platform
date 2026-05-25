@@ -20,6 +20,16 @@ class InferenceClient:
         response.raise_for_status()
         return response.json()
 
+    def observability(self) -> dict[str, Any]:
+        response = httpx.get(f"{self.base_url}/v1/observability", timeout=self.timeout)
+        response.raise_for_status()
+        return response.json()
+
+    def metrics_text(self) -> str:
+        response = httpx.get(f"{self.base_url}/metrics", timeout=self.timeout)
+        response.raise_for_status()
+        return response.text
+
     def generate_text(self, payload: dict[str, Any]) -> dict[str, Any]:
         response = httpx.post(f"{self.base_url}/v1/generate/text", json=payload, timeout=self.timeout)
         response.raise_for_status()

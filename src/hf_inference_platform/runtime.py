@@ -58,6 +58,49 @@ def image_to_base64(image: Image.Image) -> str:
     return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 
+def snapshot_device_metrics(device: str) -> dict[str, Any]:
+    if device != "cuda":
+        return {
+            "device": device,
+            "utilization_percent": None,
+            "memory_allocated_bytes": None,
+            "memory_reserved_bytes": None,
+            "memory_total_bytes": None,
+            "memory_utilization_ratio": None,
+        }
+
+    torch = torch_module()
+    if not torch.cuda.is_available():
+        return {
+            "device": "cuda",
+            "utilization_percent": None,
+            "memory_allocated_bytes": None,
+            "memory_reserved_bytes": None,
+            "memory_total_bytes": None,
+            "memory_utilization_ratio": None,
+        }
+
+    device_index = torch.cuda.current_device()
+    total_memory = torch.cuda.get_device_properties(device_index).total_memory
+    allocated = torch.cuda.memory_allocated(device_index)
+    reserved = torch.cuda.memory_reserved(device_index)
+    utilization = None
+    if hasattr(torch.cuda, "utilization"):
+        try:
+            utilization = float(torch.cuda.utilization(device_index))
+        except Exception:
+            utilization = None
+
+    return {
+        "device": "cuda",
+        "utilization_percent": utilization,
+        "memory_allocated_bytes": allocated,
+        "memory_reserved_bytes": reserved,
+        "memory_total_bytes": total_memory,
+        "memory_utilization_ratio": round(allocated / total_memory, 4) if total_memory else 0.0,
+    }
+
+
 @dataclass(slots=True)
 class LoadedModel:
     model: Any

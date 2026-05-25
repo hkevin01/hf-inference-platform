@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import statistics
 from time import perf_counter
 
@@ -24,6 +25,14 @@ def benchmark(url: str, payload: dict, runs: int) -> None:
     })
 
 
+def benchmark_matrix(matrix_path: str) -> None:
+    with open(matrix_path, "r", encoding="utf-8") as handle:
+        matrix = json.load(handle)
+
+    for case in matrix["cases"]:
+        benchmark(case["url"], case["payload"], case.get("runs", 3))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", required=True)
@@ -31,7 +40,12 @@ def main() -> None:
     parser.add_argument("--prompt", default="A cinematic city skyline at dawn")
     parser.add_argument("--model-id", default="distilgpt2")
     parser.add_argument("--kind", choices=["text", "image"], default="text")
+    parser.add_argument("--matrix", help="Path to a benchmark matrix JSON file.")
     args = parser.parse_args()
+
+    if args.matrix:
+        benchmark_matrix(args.matrix)
+        return
 
     if args.kind == "text":
         payload = {

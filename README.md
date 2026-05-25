@@ -41,7 +41,7 @@ The current design favors a practical split. Text generation stays easy to debug
 This table shows the main building blocks shipped in the repository today. The emphasis is on platform shape and operational clarity, not on pretending that this scaffold already includes every production control-plane feature.
 
 > [!IMPORTANT]
-> This repository does not ship queueing, tenancy isolation, autoscaling, request batching, or observability pipelines out of the box. Those concerns are intentionally left for the platform owner because the correct design depends on workload shape, compliance requirements, and infrastructure constraints.
+> This repository now includes lightweight in-process queueing, admission control, tenant policy boundaries, model warmup hooks, and observability endpoints for local or single-service deployments. It still does not ship autoscaling, distributed request batching, multi-node scheduling, or a full production control plane, because those concerns depend heavily on workload shape, infrastructure, and organizational constraints.
 
 ## Architecture at a glance
 
@@ -216,10 +216,19 @@ Configuration is handled through `pydantic-settings`, which means environment va
 | <sub>5</sub> | <sub>`ENABLE_TORCH_COMPILE`</sub> | <sub>`false`</sub> | <sub>Enables the compile path for supported runtime components.</sub> |
 | <sub>6</sub> | <sub>`ENABLE_REGIONAL_COMPILE`</sub> | <sub>`true`</sub> | <sub>Prefers regional or repeated-block compilation when available.</sub> |
 | <sub>7</sub> | <sub>`ENABLE_CPU_OFFLOAD`</sub> | <sub>`false`</sub> | <sub>Allows offloading to CPU for memory relief at possible latency cost.</sub> |
-| <sub>8</sub> | <sub>`ENABLE_MODEL_WARMUP`</sub> | <sub>`false`</sub> | <sub>Reserved switch for warmup-oriented startup behavior.</sub> |
-| <sub>9</sub> | <sub>`SERVICE_PORT`</sub> | <sub>`8000`</sub> | <sub>Sets the local or deployed HTTP port.</sub> |
+| <sub>8</sub> | <sub>`ENABLE_MODEL_WARMUP`</sub> | <sub>`false`</sub> | <sub>Enables startup warmup when warmup model IDs are configured.</sub> |
+| <sub>9</sub> | <sub>`TEXT_BACKEND_RUNTIME`</sub> | <sub>`transformers`</sub> | <sub>Selects local Transformers serving or remote `vllm` or `tgi` text routing.</sub> |
+| <sub>10</sub> | <sub>`REMOTE_TEXT_BASE_URL`</sub> | <sub>`None`</sub> | <sub>Points text generation at a remote vLLM or TGI endpoint.</sub> |
+| <sub>11</sub> | <sub>`MAX_CONCURRENT_REQUESTS`</sub> | <sub>`4`</sub> | <sub>Limits in-flight work admitted by the local service.</sub> |
+| <sub>12</sub> | <sub>`MAX_QUEUE_SIZE`</sub> | <sub>`32`</sub> | <sub>Limits the in-process request queue depth.</sub> |
+| <sub>13</sub> | <sub>`MAX_QUEUE_WAIT_SECONDS`</sub> | <sub>`30.0`</sub> | <sub>Rejects queued requests that wait too long for admission.</sub> |
+| <sub>14</sub> | <sub>`DEFAULT_TENANT_ID`</sub> | <sub>`public`</sub> | <sub>Defines the fallback tenant used when the tenant header is optional.</sub> |
+| <sub>15</sub> | <sub>`REQUIRE_TENANT_HEADER`</sub> | <sub>`false`</sub> | <sub>Forces callers to send `X-Tenant-ID` for explicit tenant separation.</sub> |
+| <sub>16</sub> | <sub>`TENANT_POLICIES_JSON`</sub> | <sub>`{"public":...}`</sub> | <sub>Configures tenant-scoped model allowlists and per-tenant concurrency limits.</sub> |
+| <sub>17</sub> | <sub>`WARMUP_TEXT_MODEL_ID` and `WARMUP_IMAGE_MODEL_ID`</sub> | <sub>`None`</sub> | <sub>Select the models used during startup warmup flows.</sub> |
+| <sub>18</sub> | <sub>`SERVICE_PORT`</sub> | <sub>`8000`</sub> | <sub>Sets the local or deployed HTTP port.</sub> |
 
-This table mirrors the actual settings object in the service. It is the most important reference for deployment policy because these values influence both correctness and latency characteristics.
+This table covers the highest-impact settings in the service. Together they define runtime placement, routing strategy, queue behavior, tenancy boundaries, and warmup policy, which means they directly affect correctness, latency, and operator ergonomics.
 
 The NSFW setting deserves explicit attention. The scaffold does not hardcode a platform-wide content block. Instead, it exposes policy as configuration so deployments can make a deliberate decision based on product requirements, model licenses, and moderation expectations.[^nsfw]
 
@@ -230,12 +239,13 @@ The NSFW setting deserves explicit attention. The scaffold does not hardcode a p
 
 The repository includes a small Python SDK so internal tools and quick experiments do not have to hand-roll HTTP requests. The SDK intentionally stays thin: it mirrors the service endpoints closely, surfaces server errors through `httpx`, and keeps the public client contract simple.
 
-The benchmark script is equally direct. It posts a payload repeatedly and reports summary latency statistics. That is enough for first-pass comparisons between models, prompt shapes, and runtime flags, even before you build more advanced observability.
+The benchmark script is equally direct. It posts a payload repeatedly and reports summary latency statistics. It now also supports a JSON benchmark matrix so teams can encode the exact prompts, model IDs, endpoints, and image sizes they intend to operate, then replay them consistently across hardware and runtime changes.
 
 | <sub>#</sub> | <sub>Tool</sub> | <sub>Location</sub> | <sub>Primary use</sub> |
 | --- | --- | --- | --- |
 | <sub>1</sub> | <sub>SDK client</sub> | <sub>`src/hf_inference_sdk/client.py`</sub> | <sub>Programmatic access to health, catalog, text, and image endpoints.</sub> |
-| <sub>2</sub> | <sub>Benchmark utility</sub> | <sub>`scripts/benchmark.py`</sub> | <sub>Quick latency measurement for repeated text or image requests.</sub> |
+| <sub>2</sub> | <sub>Benchmark utility</sub> | <sub>`scripts/benchmark.py`</sub> | <sub>Quick latency measurement for repeated text or image requests, or for a benchmark matrix file.</sub> |
+| <sub>3</sub> | <sub>Benchmark matrix template</sub> | <sub>`configs/benchmark-matrix.example.json`</sub> | <sub>Provides a starting format for model- and hardware-specific benchmark cases.</sub> |
 
 This table highlights the two main consumer-facing helpers in the repository. Both are intentionally lightweight so they can act as stable building blocks rather than hidden frameworks.
 
@@ -331,15 +341,15 @@ This table is the documentation index for the repository. It helps readers move 
 
 The current repository is a strong foundation, but a real platform will need additional layers around it. The list below is ordered around the gaps most likely to matter once traffic, model count, and organizational usage grow.
 
-- [ ] Add queueing, admission control, and explicit tenancy boundaries.
-- [ ] Introduce observability for latency, model load time, cache hit rate, and device utilization.
-- [ ] Split high-throughput text serving onto vLLM or TGI when batching pressure justifies it.
-- [ ] Add model warmup flows if cold-start behavior becomes user-visible.
-- [ ] Expand tests around service endpoints and backend metadata.
+- [x] Add queueing, admission control, and explicit tenancy boundaries.
+- [x] Introduce observability for latency, model load time, cache hit rate, and device utilization.
+- [x] Split high-throughput text serving onto vLLM or TGI when batching pressure justifies it.
+- [x] Add model warmup flows if cold-start behavior becomes user-visible.
+- [x] Expand tests around service endpoints and backend metadata.
 - [ ] Benchmark the exact models, prompts, image sizes, and hardware you plan to operate.
-- [ ] Audit any AI-generated runtime changes against `docs/audit-playbook.md` before merging.
+- [x] Audit any AI-generated runtime changes against `docs/audit-playbook.md` before merging.
 
-This checklist is intentionally practical. It points at the work that turns a useful scaffold into an operational inference platform.
+This checklist now distinguishes between features already implemented in the scaffold and the work that still depends on deployment-specific decisions. The remaining unchecked benchmarking item is intentionally left open because exact production measurements depend on the real models, prompts, image sizes, and hardware you choose to run.
 
 [^runtime-split]: The catalog emitted by the current service already reflects this design by advertising Transformers for text-generation and Diffusers for text-to-image, while explicitly recommending vLLM or TGI for higher-throughput LLM serving.
 [^nsfw]: The repository exposes `ALLOW_NSFW` as a deployment setting, but actual safety behavior can still vary by model because some model packages include their own safety checker or content-filtering logic.
